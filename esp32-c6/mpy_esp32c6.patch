@@ -1,0 +1,882 @@
+diff --git a/README.md b/README.md
+index c71fa4b1d..c78a23846 100644
+--- a/README.md
++++ b/README.md
+@@ -108,7 +108,7 @@ track of the code size of the core runtime and VM.
+ 
+ In addition, the following ports are provided in this repository:
+  - [cc3200](ports/cc3200) -- Texas Instruments CC3200 (including PyCom WiPy).
+- - [esp32](ports/esp32) -- Espressif ESP32 SoC (including ESP32S2, ESP32S3, ESP32C3).
++ - [esp32](ports/esp32) -- Espressif ESP32 SoC (including ESP32S2, ESP32S3, ESP32C3, ESP32C6).
+  - [esp8266](ports/esp8266) -- Espressif ESP8266 SoC.
+  - [mimxrt](ports/mimxrt) -- NXP m.iMX RT (including Teensy 4.x).
+  - [nrf](ports/nrf) -- Nordic Semiconductor nRF51 and nRF52.
+diff --git a/docs/esp32/quickref.rst b/docs/esp32/quickref.rst
+index 3d3fbe0b1..3ab4e8f5e 100644
+--- a/docs/esp32/quickref.rst
++++ b/docs/esp32/quickref.rst
+@@ -18,7 +18,7 @@ working with this board it may be useful to get an overview of the microcontroll
+    general.rst
+    tutorial/index.rst
+ 
+-Note that there are several varieties of ESP32 -- ESP32, ESP32C3, ESP32S2, ESP32S3 --
++Note that there are several varieties of ESP32 -- ESP32, ESP32C3, ESP32C6, ESP32S2, ESP32S3 --
+ supported by MicroPython, with some differences in functionality between them.
+ 
+ Installing MicroPython
+@@ -61,13 +61,13 @@ The :mod:`esp32` module::
+     import esp32
+ 
+     esp32.raw_temperature() # read the internal temperature of the MCU, in Fahrenheit
+-    esp32.ULP()             # access to the Ultra-Low-Power Co-processor, not on ESP32C3
++    esp32.ULP()             # access to the Ultra-Low-Power Co-processor, not on ESP32C3/C6
+ 
+ Note that the temperature sensor in the ESP32 will typically read higher than
+ ambient due to the IC getting warm while it runs.  This effect can be minimised
+ by reading the temperature sensor immediately after waking up from sleep.
+ 
+-ESP32C3, ESP32S2, and ESP32S3 also have an internal temperature sensor available.
++ESP32C3, ESP32C6, ESP32S2, and ESP32S3 also have an internal temperature sensor available.
+ It is implemented a bit differently to the ESP32 and returns the temperature in
+ Celsius::
+ 
+diff --git a/ports/esp32/Makefile b/ports/esp32/Makefile
+index 3df2af471..d79adf777 100644
+--- a/ports/esp32/Makefile
++++ b/ports/esp32/Makefile
+@@ -43,6 +43,7 @@ ifdef USER_C_MODULES
+ endif
+ 
+ IDFPY_FLAGS += -D MICROPY_BOARD=$(BOARD) -D MICROPY_BOARD_DIR="$(abspath $(BOARD_DIR))" $(CMAKE_ARGS)
++DEVICE +=  -p $(PORT) -b $(BAUD)
+ 
+ ifdef FROZEN_MANIFEST
+        IDFPY_FLAGS += -D MICROPY_FROZEN_MANIFEST=$(FROZEN_MANIFEST)
+@@ -59,7 +60,7 @@ endif
+ HELP_BUILD_ERROR ?= "See \033[1;31mhttps://github.com/micropython/micropython/wiki/Build-Troubleshooting\033[0m"
+ 
+ define RUN_IDF_PY
+-	idf.py $(IDFPY_FLAGS) -B $(BUILD) -p $(PORT) -b $(BAUD) $(1)
++	idf.py $(IDFPY_FLAGS) -B $(BUILD) $(1)
+ endef
+ 
+ all:
+@@ -78,13 +79,13 @@ clean:
+ 	$(call RUN_IDF_PY,fullclean)
+ 
+ deploy:
+-	$(call RUN_IDF_PY,flash)
++	$(call RUN_IDF_PY,$(DEVICE) flash)
+ 
+ erase:
+-	$(call RUN_IDF_PY,erase-flash)
++	$(call RUN_IDF_PY,$(DEVICE) erase-flash)
+ 
+ monitor:
+-	$(call RUN_IDF_PY,monitor)
++	$(call RUN_IDF_PY,$(DEVICE) monitor)
+ 
+ size:
+ 	$(call RUN_IDF_PY,size)
+diff --git a/ports/esp32/adc.c b/ports/esp32/adc.c
+index 91db9ec52..584439fbd 100644
+--- a/ports/esp32/adc.c
++++ b/ports/esp32/adc.c
+@@ -45,7 +45,7 @@ void madcblock_bits_helper(machine_adc_block_obj_t *self, mp_int_t bits) {
+             self->width = ADC_WIDTH_BIT_11;
+             break;
+         #endif
+-        #if CONFIG_IDF_TARGET_ESP32 || CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32S3
++        #if CONFIG_IDF_TARGET_ESP32 || CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32C6
+         case 12:
+             self->width = ADC_WIDTH_BIT_12;
+             break;
+diff --git a/ports/esp32/boards/ESP32_GENERIC_C6/board.json b/ports/esp32/boards/ESP32_GENERIC_C6/board.json
+new file mode 100644
+index 000000000..963d9515b
+--- /dev/null
++++ b/ports/esp32/boards/ESP32_GENERIC_C6/board.json
+@@ -0,0 +1,19 @@
++{
++    "deploy": [
++        "../deploy_c6.md"
++    ],
++    "docs": "",
++    "features": [
++        "BLE",
++        "WiFi"
++    ],
++    "id": "esp32c6",
++    "images": [
++        "esp32c6_devkitmini.jpg"
++    ],
++    "mcu": "esp32c6",
++    "product": "ESP32-C6",
++    "thumbnail": "",
++    "url": "https://www.espressif.com/en/products/modules",
++    "vendor": "Espressif"
++}
+diff --git a/ports/esp32/boards/ESP32_GENERIC_C6/mpconfigboard.cmake b/ports/esp32/boards/ESP32_GENERIC_C6/mpconfigboard.cmake
+new file mode 100644
+index 000000000..4393130b6
+--- /dev/null
++++ b/ports/esp32/boards/ESP32_GENERIC_C6/mpconfigboard.cmake
+@@ -0,0 +1,7 @@
++set(IDF_TARGET esp32c6)
++
++set(SDKCONFIG_DEFAULTS
++    boards/sdkconfig.base
++    ${SDKCONFIG_IDF_VERSION_SPECIFIC}
++    boards/sdkconfig.ble
++)
+diff --git a/ports/esp32/boards/ESP32_GENERIC_C6/mpconfigboard.h b/ports/esp32/boards/ESP32_GENERIC_C6/mpconfigboard.h
+new file mode 100644
+index 000000000..be530ad3a
+--- /dev/null
++++ b/ports/esp32/boards/ESP32_GENERIC_C6/mpconfigboard.h
+@@ -0,0 +1,10 @@
++// This configuration is for a generic ESP32C6 board with 4MiB (or more) of flash.
++
++#define MICROPY_HW_BOARD_NAME               "ESP32C6 module"
++#define MICROPY_HW_MCU_NAME                 "ESP32C6"
++
++#define MICROPY_HW_ENABLE_SDCARD            (0)
++#define MICROPY_PY_MACHINE_I2S              (0)
++
++// Enable UART REPL for modules that have an external USB-UART and don't use native USB.
++#define MICROPY_HW_ENABLE_UART_REPL         (1)
+diff --git a/ports/esp32/boards/M5STACK_NANOC6/board.json b/ports/esp32/boards/M5STACK_NANOC6/board.json
+new file mode 100644
+index 000000000..15654341b
+--- /dev/null
++++ b/ports/esp32/boards/M5STACK_NANOC6/board.json
+@@ -0,0 +1,21 @@
++{
++    "deploy": [
++        "deploy_nanoc6.md"
++    ],
++    "docs": "",
++    "features": [
++        "BLE",
++        "WiFi",
++        "RGB LED",
++        "USB",
++        "USB-C",
++        "JST-PH"
++    ],
++    "images": [
++        "m5stack_nanoc6.jpg"
++    ],
++    "mcu": "esp32c6",
++    "product": "M5Stack NanoC6",
++    "url": "https://shop.m5stack.com/products/m5stack-nanoc6-dev-kit",
++    "vendor": "M5Stack"
++}
+diff --git a/ports/esp32/boards/M5STACK_NANOC6/deploy_nanoc6.md b/ports/esp32/boards/M5STACK_NANOC6/deploy_nanoc6.md
+new file mode 100644
+index 000000000..61854f204
+--- /dev/null
++++ b/ports/esp32/boards/M5STACK_NANOC6/deploy_nanoc6.md
+@@ -0,0 +1,18 @@
++Program your board using the esptool.py program, found
++[here](https://github.com/espressif/esptool).
++
++To put the NanoC6 into 'update mode', hold the button while connecting the USB
++cable. It can be released after the connection is made.
++
++If you are putting MicroPython on your board for the first time then you should
++first erase the entire flash using:
++
++```bash
++esptool.py --chip esp32c6 --port /dev/ttyUSB0 erase_flash
++```
++
++From then on program the firmware starting at address 0x0:
++
++```bash
++esptool.py --chip esp32c6 --port /dev/ttyUSB0 --baud 460800 write_flash -z 0x0 esp32c6-20220117-v1.18.bin
++```
+diff --git a/ports/esp32/boards/M5STACK_NANOC6/mpconfigboard.cmake b/ports/esp32/boards/M5STACK_NANOC6/mpconfigboard.cmake
+new file mode 100644
+index 000000000..daab8df1e
+--- /dev/null
++++ b/ports/esp32/boards/M5STACK_NANOC6/mpconfigboard.cmake
+@@ -0,0 +1,6 @@
++set(IDF_TARGET esp32c6)
++
++set(SDKCONFIG_DEFAULTS
++    boards/sdkconfig.base
++    boards/sdkconfig.ble
++)
+\ No newline at end of file
+diff --git a/ports/esp32/boards/M5STACK_NANOC6/mpconfigboard.h b/ports/esp32/boards/M5STACK_NANOC6/mpconfigboard.h
+new file mode 100644
+index 000000000..51643d663
+--- /dev/null
++++ b/ports/esp32/boards/M5STACK_NANOC6/mpconfigboard.h
+@@ -0,0 +1,10 @@
++// This configuration is for a generic ESP32C6 board with 4MiB (or more) of flash.
++
++#define MICROPY_HW_BOARD_NAME    "M5Stack NanoC6"
++#define MICROPY_HW_MCU_NAME      "ESP32C6"
++
++#define MICROPY_HW_ENABLE_SDCARD (0)
++#define MICROPY_PY_MACHINE_I2S   (0)
++
++#define MICROPY_HW_I2C0_SCL      (1)
++#define MICROPY_HW_I2C0_SDA      (2)
+diff --git a/ports/esp32/boards/M5STACK_NANOC6/pins.csv b/ports/esp32/boards/M5STACK_NANOC6/pins.csv
+new file mode 100644
+index 000000000..f04cfb4db
+--- /dev/null
++++ b/ports/esp32/boards/M5STACK_NANOC6/pins.csv
+@@ -0,0 +1,7 @@
++G1,GPIO1
++G2,GPIO2
++IR_LED,GPIO3
++LED_BLUE,GPIO7
++BUTTON,GPIO9
++NEOPIXEL_POWER,GPIO19
++NEOPIXEL,GPIO20
+diff --git a/ports/esp32/boards/UM_TINYC6/board.json b/ports/esp32/boards/UM_TINYC6/board.json
+new file mode 100644
+index 000000000..122b411a3
+--- /dev/null
++++ b/ports/esp32/boards/UM_TINYC6/board.json
+@@ -0,0 +1,22 @@
++{
++    "deploy": [
++        "deploy_tinyc6.md"
++    ],
++    "docs": "",
++    "features": [
++        "Battery Charging",
++        "BLE",
++        "External Flash",
++        "WiFi",
++        "RGB LED",
++        "USB",
++        "USB-C"
++    ],
++    "images": [
++        "unexpectedmaker_tinyc6.jpg"
++    ],
++    "mcu": "esp32c6",
++    "product": "TinyC6",
++    "url": "https://tinyc6.io",
++    "vendor": "Unexpected Maker"
++}
+diff --git a/ports/esp32/boards/UM_TINYC6/deploy_tinyc6.md b/ports/esp32/boards/UM_TINYC6/deploy_tinyc6.md
+new file mode 100644
+index 000000000..6c8b93bfb
+--- /dev/null
++++ b/ports/esp32/boards/UM_TINYC6/deploy_tinyc6.md
+@@ -0,0 +1,18 @@
++Program your board using the esptool.py program, found
++[here](https://github.com/espressif/esptool).
++
++To put the TinyC6 into 'download mode', hold the _BOOT_ button while connecting
++the USB cable. It can be released after the connection is made.
++
++If you are putting MicroPython on your board for the first time then you should
++first erase the entire flash using:
++
++```bash
++esptool.py --chip esp32c6 --port /dev/ttyUSB0 erase_flash
++```
++
++From then on program the firmware starting at address 0x0:
++
++```bash
++esptool.py --chip esp32c6 --port /dev/ttyUSB0 --baud 460800 write_flash -z 0x0 esp32c6-20220117-v1.18.bin
++```
+diff --git a/ports/esp32/boards/UM_TINYC6/mpconfigboard.cmake b/ports/esp32/boards/UM_TINYC6/mpconfigboard.cmake
+new file mode 100644
+index 000000000..42d9e6362
+--- /dev/null
++++ b/ports/esp32/boards/UM_TINYC6/mpconfigboard.cmake
+@@ -0,0 +1,7 @@
++set(IDF_TARGET esp32c6)
++
++set(SDKCONFIG_DEFAULTS
++    boards/sdkconfig.base
++    boards/sdkconfig.ble
++    boards/UM_TINYC6/sdkconfig.board
++)
+\ No newline at end of file
+diff --git a/ports/esp32/boards/UM_TINYC6/mpconfigboard.h b/ports/esp32/boards/UM_TINYC6/mpconfigboard.h
+new file mode 100644
+index 000000000..64cf1d784
+--- /dev/null
++++ b/ports/esp32/boards/UM_TINYC6/mpconfigboard.h
+@@ -0,0 +1,14 @@
++// This configuration is for a generic ESP32C6 board with 8MiB (or more) of flash.
++
++#define MICROPY_HW_BOARD_NAME    "Unexpected Maker TinyC6"
++#define MICROPY_HW_MCU_NAME      "ESP32C6"
++
++#define MICROPY_HW_ENABLE_SDCARD (0)
++#define MICROPY_PY_MACHINE_I2S   (0)
++
++#define MICROPY_HW_I2C0_SCL      (7)
++#define MICROPY_HW_I2C0_SDA      (6)
++
++#define MICROPY_HW_SPI1_MOSI     (21)
++#define MICROPY_HW_SPI1_MISO     (20)
++#define MICROPY_HW_SPI1_SCK      (19)
+diff --git a/ports/esp32/boards/UM_TINYC6/pins.csv b/ports/esp32/boards/UM_TINYC6/pins.csv
+new file mode 100644
+index 000000000..1eab19bc8
+--- /dev/null
++++ b/ports/esp32/boards/UM_TINYC6/pins.csv
+@@ -0,0 +1,26 @@
++IO0,GPIO0
++IO1,GPIO1
++IO2,GPIO2
++IO3,GPIO3
++IO4,GPIO4
++VBAT_SENSE,GPIO4
++IO5,GPIO5
++IO6,GPIO6
++SDA,GPIO6
++IO7,GPIO7
++SCL,GPIO7
++IO8,GPIO8
++IO9,GPIO9
++VBUS_SENSE,GPIO10
++IO11,GPIO11
++IO15,GPIO15
++IO16,GPIO16
++TX,GPIO16
++IO17,GPIO17
++RX,GPIO17
++IO18,GPIO18
++IO19,GPIO19
++IO20,GPIO20
++IO21,GPIO21
++NEOPIXEL_PWR,GPIO22
++NEOPIXEL_DATA,GPIO23
+diff --git a/ports/esp32/boards/UM_TINYC6/sdkconfig.board b/ports/esp32/boards/UM_TINYC6/sdkconfig.board
+new file mode 100644
+index 000000000..7917467b1
+--- /dev/null
++++ b/ports/esp32/boards/UM_TINYC6/sdkconfig.board
+@@ -0,0 +1,10 @@
++CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
++CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
++CONFIG_ESPTOOLPY_AFTER_NORESET=y
++
++CONFIG_ESPTOOLPY_FLASHSIZE_4MB=
++CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
++CONFIG_ESPTOOLPY_FLASHSIZE_16MB=
++CONFIG_SPIRAM_MEMTEST=
++CONFIG_PARTITION_TABLE_CUSTOM=y
++CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions-8MiB.csv"
+diff --git a/ports/esp32/boards/deploy_c6.md b/ports/esp32/boards/deploy_c6.md
+new file mode 100644
+index 000000000..d8e567a1c
+--- /dev/null
++++ b/ports/esp32/boards/deploy_c6.md
+@@ -0,0 +1,14 @@
++Program your board using the esptool.py program, found [here](https://github.com/espressif/esptool).
++
++If you are putting MicroPython on your board for the first time then you should
++first erase the entire flash using:
++
++```bash
++esptool.py --chip esp32c6 --port /dev/ttyUSB0 erase_flash
++```
++
++From then on program the firmware starting at address 0x0:
++
++```bash
++esptool.py --chip esp32c6 --port /dev/ttyUSB0 --baud 460800 write_flash -z 0x0 esp32c6-20220117-v1.18.bin
++```
+diff --git a/ports/esp32/esp32_common.cmake b/ports/esp32/esp32_common.cmake
+index 7c5089639..41ae61bcc 100644
+--- a/ports/esp32/esp32_common.cmake
++++ b/ports/esp32/esp32_common.cmake
+@@ -163,7 +163,7 @@ idf_component_register(
+ set(MICROPY_TARGET ${COMPONENT_TARGET})
+ 
+ # Define mpy-cross flags, for use with frozen code.
+-if(NOT IDF_TARGET STREQUAL "esp32c3")
++if(CONFIG_IDF_TARGET_ARCH STREQUAL "xtensa")
+ set(MICROPY_CROSS_FLAGS -march=xtensawin)
+ endif()
+ 
+diff --git a/ports/esp32/gccollect.c b/ports/esp32/gccollect.c
+index 4b6dd8ab6..e6c17fda6 100644
+--- a/ports/esp32/gccollect.c
++++ b/ports/esp32/gccollect.c
+@@ -35,7 +35,7 @@
+ #include "py/mpthread.h"
+ #include "gccollect.h"
+ 
+-#if CONFIG_IDF_TARGET_ESP32 || CONFIG_IDF_TARGET_ESP32S2 || CONFIG_IDF_TARGET_ESP32S3
++#if CONFIG_IDF_TARGET_ARCH_XTENSA
+ 
+ #include "xtensa/hal.h"
+ 
+@@ -61,8 +61,7 @@ void gc_collect(void) {
+     gc_collect_end();
+ }
+ 
+-#elif CONFIG_IDF_TARGET_ESP32C3
+-
++#elif CONFIG_IDF_TARGET_ARCH_RISCV
+ #include "shared/runtime/gchelper.h"
+ 
+ void gc_collect(void) {
+@@ -74,6 +73,8 @@ void gc_collect(void) {
+     gc_collect_end();
+ }
+ 
++#else
++#error unknown CONFIG_IDF_TARGET_ARCH
+ #endif
+ 
+ #if MICROPY_GC_SPLIT_HEAP_AUTO
+diff --git a/ports/esp32/machine_adc.c b/ports/esp32/machine_adc.c
+index 0ac9f5d26..11f7f3b07 100644
+--- a/ports/esp32/machine_adc.c
++++ b/ports/esp32/machine_adc.c
+@@ -44,7 +44,7 @@
+ #define MICROPY_PY_MACHINE_ADC_CLASS_CONSTANTS_WIDTH_9_10_11
+ #endif
+ 
+-#if CONFIG_IDF_TARGET_ESP32 || CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32S3
++#if CONFIG_IDF_TARGET_ESP32 || CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32S3
+ #define MICROPY_PY_MACHINE_ADC_CLASS_CONSTANTS_WIDTH_12 \
+     { MP_ROM_QSTR(MP_QSTR_WIDTH_12BIT), MP_ROM_INT(12) },
+ #else
+@@ -87,7 +87,7 @@ static const machine_adc_obj_t madc_obj[] = {
+     {{&machine_adc_type}, ADCBLOCK2, ADC_CHANNEL_7, GPIO_NUM_27},
+     {{&machine_adc_type}, ADCBLOCK2, ADC_CHANNEL_8, GPIO_NUM_25},
+     {{&machine_adc_type}, ADCBLOCK2, ADC_CHANNEL_9, GPIO_NUM_26},
+-    #elif CONFIG_IDF_TARGET_ESP32C3
++    #elif CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6
+     {{&machine_adc_type}, ADCBLOCK1, ADC_CHANNEL_0, GPIO_NUM_0},
+     {{&machine_adc_type}, ADCBLOCK1, ADC_CHANNEL_1, GPIO_NUM_1},
+     {{&machine_adc_type}, ADCBLOCK1, ADC_CHANNEL_2, GPIO_NUM_2},
+@@ -148,11 +148,13 @@ static void mp_machine_adc_print(const mp_print_t *print, mp_obj_t self_in, mp_p
+ }
+ 
+ static void madc_atten_helper(const machine_adc_obj_t *self, mp_int_t atten) {
+-    esp_err_t err;
++    esp_err_t err = ESP_OK;
+     if (self->block->unit_id == ADC_UNIT_1) {
+         err = adc1_config_channel_atten(self->channel_id, atten);
+     } else {
++        #if (SOC_ADC_PERIPH_NUM >= 2)
+         err = adc2_config_channel_atten(self->channel_id, atten);
++        #endif
+     }
+     if (err != ESP_OK) {
+         mp_raise_ValueError(MP_ERROR_TEXT("invalid atten"));
+diff --git a/ports/esp32/machine_adc_block.c b/ports/esp32/machine_adc_block.c
+index c61023390..f0141d91a 100644
+--- a/ports/esp32/machine_adc_block.c
++++ b/ports/esp32/machine_adc_block.c
+@@ -32,7 +32,7 @@
+ #include "driver/adc.h"
+ 
+ machine_adc_block_obj_t madcblock_obj[] = {
+-    #if CONFIG_IDF_TARGET_ESP32 || CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32S3
++    #if CONFIG_IDF_TARGET_ESP32 || CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32C6
+     {{&machine_adc_block_type}, ADC_UNIT_1, 12, -1, {0}},
+     {{&machine_adc_block_type}, ADC_UNIT_2, 12, -1, {0}},
+     #elif CONFIG_IDF_TARGET_ESP32S2
+diff --git a/ports/esp32/machine_bitstream.c b/ports/esp32/machine_bitstream.c
+index ceb1e6ad1..b4e58c51f 100644
+--- a/ports/esp32/machine_bitstream.c
++++ b/ports/esp32/machine_bitstream.c
+@@ -42,7 +42,7 @@
+ // This is a translation of the cycle counter implementation in ports/stm32/machine_bitstream.c.
+ static void IRAM_ATTR machine_bitstream_high_low_bitbang(mp_hal_pin_obj_t pin, uint32_t *timing_ns, const uint8_t *buf, size_t len) {
+     uint32_t pin_mask, gpio_reg_set, gpio_reg_clear;
+-    #if !CONFIG_IDF_TARGET_ESP32C3
++    #if !CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6
+     if (pin >= 32) {
+         pin_mask = 1 << (pin - 32);
+         gpio_reg_set = GPIO_OUT1_W1TS_REG;
+diff --git a/ports/esp32/machine_hw_spi.c b/ports/esp32/machine_hw_spi.c
+index a0531b95f..4b3d392cb 100644
+--- a/ports/esp32/machine_hw_spi.c
++++ b/ports/esp32/machine_hw_spi.c
+@@ -38,10 +38,10 @@
+ #include "soc/spi_pins.h"
+ 
+ // SPI mappings by device, naming used by IDF old/new
+-// upython   | ESP32     | ESP32S2   | ESP32S3 | ESP32C3
+-// ----------+-----------+-----------+---------+---------
+-// SPI(id=1) | HSPI/SPI2 | FSPI/SPI2 | SPI2    | SPI2
+-// SPI(id=2) | VSPI/SPI3 | HSPI/SPI3 | SPI3    | err
++// upython   | ESP32     | ESP32S2   | ESP32S3 | ESP32C3 | ESP32C6
++// ----------+-----------+-----------+---------+---------+---------
++// SPI(id=1) | HSPI/SPI2 | FSPI/SPI2 | SPI2    | SPI2    | SPI2
++// SPI(id=2) | VSPI/SPI3 | HSPI/SPI3 | SPI3    | err     | err
+ 
+ // Number of available hardware SPI peripherals.
+ #if SOC_SPI_PERIPH_NUM > 2
+@@ -251,14 +251,14 @@ static void machine_hw_spi_init_internal(machine_hw_spi_obj_t *self, mp_arg_val_
+ 
+     // Select DMA channel based on the hardware SPI host
+     int dma_chan = 0;
+-    #if CONFIG_IDF_TARGET_ESP32S2 || CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32C3
+-    dma_chan = SPI_DMA_CH_AUTO;
+-    #else
++    #if CONFIG_IDF_TARGET_ESP32
+     if (self->host == SPI2_HOST) {
+         dma_chan = 1;
+     } else {
+         dma_chan = 2;
+     }
++    #else
++    dma_chan = SPI_DMA_CH_AUTO;
+     #endif
+ 
+     ret = spi_bus_initialize(self->host, &buscfg, dma_chan);
+diff --git a/ports/esp32/machine_i2c.c b/ports/esp32/machine_i2c.c
+old mode 100755
+new mode 100644
+index fe42d2e8c..e1e1850da
+--- a/ports/esp32/machine_i2c.c
++++ b/ports/esp32/machine_i2c.c
+@@ -49,7 +49,7 @@
+ #endif
+ #endif
+ 
+-#if CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32S3
++#if CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32S3
+ #define I2C_SCLK_FREQ XTAL_CLK_FREQ
+ #elif CONFIG_IDF_TARGET_ESP32 || CONFIG_IDF_TARGET_ESP32S2
+ #define I2C_SCLK_FREQ APB_CLK_FREQ
+diff --git a/ports/esp32/machine_pin.c b/ports/esp32/machine_pin.c
+index 149715cf6..cb54151cf 100644
+--- a/ports/esp32/machine_pin.c
++++ b/ports/esp32/machine_pin.c
+@@ -44,7 +44,7 @@
+ #include "modesp32.h"
+ #include "genhdr/pins.h"
+ 
+-#if CONFIG_IDF_TARGET_ESP32C3
++#if CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6
+ #include "soc/usb_serial_jtag_reg.h"
+ #endif
+ 
+@@ -153,7 +153,7 @@ static mp_obj_t machine_pin_obj_init_helper(const machine_pin_obj_t *self, size_
+     // reset the pin to digital if this is a mode-setting init (grab it back from ADC)
+     if (args[ARG_mode].u_obj != mp_const_none) {
+         if (rtc_gpio_is_valid_gpio(index)) {
+-            #if !CONFIG_IDF_TARGET_ESP32C3
++            #if !(CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6)
+             rtc_gpio_deinit(index);
+             #endif
+         }
+@@ -164,6 +164,11 @@ static mp_obj_t machine_pin_obj_init_helper(const machine_pin_obj_t *self, size_
+         CLEAR_PERI_REG_MASK(USB_SERIAL_JTAG_CONF0_REG, USB_SERIAL_JTAG_USB_PAD_ENABLE);
+     }
+     #endif
++    #if CONFIG_IDF_TARGET_ESP32C6 && CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG_ENABLED
++    if (index == 12 || index == 13) {
++        CLEAR_PERI_REG_MASK(USB_SERIAL_JTAG_CONF0_REG, USB_SERIAL_JTAG_USB_PAD_ENABLE);
++    }
++    #endif
+ 
+     // configure the pin for gpio
+     esp_rom_gpio_pad_select_gpio(index);
+diff --git a/ports/esp32/machine_pin.h b/ports/esp32/machine_pin.h
+index 1d64e7f41..3f94508e0 100644
+--- a/ports/esp32/machine_pin.h
++++ b/ports/esp32/machine_pin.h
+@@ -94,6 +94,36 @@
+ #define MICROPY_HW_ENABLE_GPIO20 (1)
+ #define MICROPY_HW_ENABLE_GPIO21 (1)
+ 
++#elif CONFIG_IDF_TARGET_ESP32C6
++
++#define MICROPY_HW_ENABLE_GPIO0 (1)
++#define MICROPY_HW_ENABLE_GPIO1 (1)
++#define MICROPY_HW_ENABLE_GPIO2 (1)
++#define MICROPY_HW_ENABLE_GPIO3 (1)
++#define MICROPY_HW_ENABLE_GPIO4 (1)
++#define MICROPY_HW_ENABLE_GPIO5 (1)
++#define MICROPY_HW_ENABLE_GPIO6 (1)
++#define MICROPY_HW_ENABLE_GPIO7 (1)
++#define MICROPY_HW_ENABLE_GPIO8 (1)
++#define MICROPY_HW_ENABLE_GPIO9 (1)
++#define MICROPY_HW_ENABLE_GPIO10 (1)
++#define MICROPY_HW_ENABLE_GPIO11 (1)
++#if !CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
++#define MICROPY_HW_ENABLE_GPIO12 (1)
++#define MICROPY_HW_ENABLE_GPIO13 (1)
++#endif
++#define MICROPY_HW_ENABLE_GPIO14 (1)
++#define MICROPY_HW_ENABLE_GPIO15 (1)
++#define MICROPY_HW_ENABLE_GPIO16 (1)
++#define MICROPY_HW_ENABLE_GPIO17 (1)
++#define MICROPY_HW_ENABLE_GPIO18 (1)
++#define MICROPY_HW_ENABLE_GPIO19 (1)
++#define MICROPY_HW_ENABLE_GPIO20 (1)
++#define MICROPY_HW_ENABLE_GPIO21 (1)
++#define MICROPY_HW_ENABLE_GPIO22 (1)
++#define MICROPY_HW_ENABLE_GPIO23 (1)
++// GPIO 24-30 are used for spi/sip flash.
++
+ #elif CONFIG_IDF_TARGET_ESP32S2 || CONFIG_IDF_TARGET_ESP32S3
+ 
+ #define MICROPY_HW_ENABLE_GPIO0 (1)
+diff --git a/ports/esp32/machine_pwm.c b/ports/esp32/machine_pwm.c
+index e5d8986c8..b823e3f08 100644
+--- a/ports/esp32/machine_pwm.c
++++ b/ports/esp32/machine_pwm.c
+@@ -241,7 +241,12 @@ static void set_freq(machine_pwm_obj_t *self, unsigned int freq, ledc_timer_conf
+         // Configure the new resolution and frequency
+         timer->duty_resolution = res;
+         timer->freq_hz = freq;
++        #if CONFIG_IDF_TARGET_ESP32C6
++        // TODO don't know if this is appropriate, compiler error suggested it
++        timer->clk_cfg = LEDC_USE_XTAL_CLK;
++        #else
+         timer->clk_cfg = LEDC_USE_APB_CLK;
++        #endif
+         #if SOC_LEDC_SUPPORT_REF_TICK
+         if (freq < EMPIRIC_FREQ) {
+             timer->clk_cfg = LEDC_USE_REF_TICK;
+diff --git a/ports/esp32/machine_timer.c b/ports/esp32/machine_timer.c
+index 278deb106..d9e237e58 100644
+--- a/ports/esp32/machine_timer.c
++++ b/ports/esp32/machine_timer.c
+@@ -155,7 +155,7 @@ void machine_timer_enable(machine_timer_obj_t *self, void (*timer_isr)) {
+     // Initialise the timer.
+     timer_hal_init(&self->hal_context, self->group, self->index);
+     timer_ll_enable_counter(self->hal_context.dev, self->index, false);
+-    timer_ll_set_clock_source(self->hal_context.dev, self->index, GPTIMER_CLK_SRC_APB);
++    timer_ll_set_clock_source(self->hal_context.dev, self->index, GPTIMER_CLK_SRC_DEFAULT);
+     timer_ll_set_clock_prescale(self->hal_context.dev, self->index, TIMER_DIVIDER);
+     timer_hal_set_counter_value(&self->hal_context, 0);
+     timer_ll_set_count_direction(self->hal_context.dev, self->index, GPTIMER_COUNT_UP);
+diff --git a/ports/esp32/machine_uart.c b/ports/esp32/machine_uart.c
+index d260c45c4..7a7f0d11b 100644
+--- a/ports/esp32/machine_uart.c
++++ b/ports/esp32/machine_uart.c
+@@ -453,12 +453,18 @@ static mp_obj_t mp_machine_uart_make_new(const mp_obj_type_t *type, size_t n_arg
+             self->rx = 9;
+             self->tx = 10;
+             break;
+-        #if SOC_UART_NUM > 2
++        #if SOC_UART_HP_NUM > 2
+         case UART_NUM_2:
+             self->rx = 16;
+             self->tx = 17;
+             break;
+         #endif
++        #if (SOC_UART_LP_NUM >= 1)
++        case LP_UART_NUM_0:
++            self->rx = 4;
++            self->tx = 5;
++        #endif
++
+     }
+ 
+     #if MICROPY_HW_ENABLE_UART_REPL
+diff --git a/ports/esp32/main_esp32c3/CMakeLists.txt b/ports/esp32/main_esp32c3/CMakeLists.txt
+index c9f1e5bcb..307c0f321 100644
+--- a/ports/esp32/main_esp32c3/CMakeLists.txt
++++ b/ports/esp32/main_esp32c3/CMakeLists.txt
+@@ -9,5 +9,6 @@ if(NOT MICROPY_PORT_DIR)
+ endif()
+ 
+ list(APPEND MICROPY_SOURCE_LIB ${MICROPY_DIR}/shared/runtime/gchelper_generic.c)
++list(APPEND IDF_COMPONENTS riscv)
+ 
+ include(${MICROPY_PORT_DIR}/esp32_common.cmake)
+diff --git a/ports/esp32/main_esp32c6/CMakeLists.txt b/ports/esp32/main_esp32c6/CMakeLists.txt
+new file mode 100644
+index 000000000..307c0f321
+--- /dev/null
++++ b/ports/esp32/main_esp32c6/CMakeLists.txt
+@@ -0,0 +1,14 @@
++# Set location of base MicroPython directory.
++if(NOT MICROPY_DIR)
++    get_filename_component(MICROPY_DIR ${CMAKE_CURRENT_LIST_DIR}/../../.. ABSOLUTE)
++endif()
++
++# Set location of the ESP32 port directory.
++if(NOT MICROPY_PORT_DIR)
++    get_filename_component(MICROPY_PORT_DIR ${MICROPY_DIR}/ports/esp32 ABSOLUTE)
++endif()
++
++list(APPEND MICROPY_SOURCE_LIB ${MICROPY_DIR}/shared/runtime/gchelper_generic.c)
++list(APPEND IDF_COMPONENTS riscv)
++
++include(${MICROPY_PORT_DIR}/esp32_common.cmake)
+diff --git a/ports/esp32/main_esp32c6/idf_component.yml b/ports/esp32/main_esp32c6/idf_component.yml
+new file mode 100644
+index 000000000..5bbab6d8c
+--- /dev/null
++++ b/ports/esp32/main_esp32c6/idf_component.yml
+@@ -0,0 +1,5 @@
++## IDF Component Manager Manifest File
++dependencies:
++  espressif/mdns: "~1.1.0"
++  idf:
++    version: ">=5.1.0"
+diff --git a/ports/esp32/main_esp32c6/linker.lf b/ports/esp32/main_esp32c6/linker.lf
+new file mode 100644
+index 000000000..cedabcf97
+--- /dev/null
++++ b/ports/esp32/main_esp32c6/linker.lf
+@@ -0,0 +1 @@
++# Empty linker fragment (no workaround required for C6, see main_esp32/linker.lf).
+diff --git a/ports/esp32/modesp32.c b/ports/esp32/modesp32.c
+index 1ee9153d7..e35f303ab 100644
+--- a/ports/esp32/modesp32.c
++++ b/ports/esp32/modesp32.c
+@@ -29,7 +29,6 @@
+ 
+ #include <time.h>
+ #include <sys/time.h>
+-#include "soc/rtc_cntl_reg.h"
+ #include "driver/gpio.h"
+ #include "driver/adc.h"
+ #include "esp_heap_caps.h"
+@@ -138,6 +137,7 @@ static mp_obj_t esp32_wake_on_ulp(const mp_obj_t wake) {
+ }
+ static MP_DEFINE_CONST_FUN_OBJ_1(esp32_wake_on_ulp_obj, esp32_wake_on_ulp);
+ 
++#if !SOC_GPIO_SUPPORT_HOLD_SINGLE_IO_IN_DSLP
+ static mp_obj_t esp32_gpio_deep_sleep_hold(const mp_obj_t enable) {
+     if (mp_obj_is_true(enable)) {
+         gpio_deep_sleep_hold_en();
+@@ -146,7 +146,9 @@ static mp_obj_t esp32_gpio_deep_sleep_hold(const mp_obj_t enable) {
+     }
+     return mp_const_none;
+ }
++
+ static MP_DEFINE_CONST_FUN_OBJ_1(esp32_gpio_deep_sleep_hold_obj, esp32_gpio_deep_sleep_hold);
++#endif
+ 
+ #if CONFIG_IDF_TARGET_ESP32
+ 
+@@ -219,7 +221,9 @@ static const mp_rom_map_elem_t esp32_module_globals_table[] = {
+     { MP_ROM_QSTR(MP_QSTR_wake_on_ext0), MP_ROM_PTR(&esp32_wake_on_ext0_obj) },
+     { MP_ROM_QSTR(MP_QSTR_wake_on_ext1), MP_ROM_PTR(&esp32_wake_on_ext1_obj) },
+     { MP_ROM_QSTR(MP_QSTR_wake_on_ulp), MP_ROM_PTR(&esp32_wake_on_ulp_obj) },
++    #if !SOC_GPIO_SUPPORT_HOLD_SINGLE_IO_IN_DSLP
+     { MP_ROM_QSTR(MP_QSTR_gpio_deep_sleep_hold), MP_ROM_PTR(&esp32_gpio_deep_sleep_hold_obj) },
++    #endif
+     #if CONFIG_IDF_TARGET_ESP32
+     { MP_ROM_QSTR(MP_QSTR_raw_temperature), MP_ROM_PTR(&esp32_raw_temperature_obj) },
+     #else
+diff --git a/ports/esp32/modmachine.c b/ports/esp32/modmachine.c
+index 759455a59..30bc41ed6 100644
+--- a/ports/esp32/modmachine.c
++++ b/ports/esp32/modmachine.c
+@@ -90,9 +90,8 @@ typedef enum {
+ 
+ static bool is_soft_reset = 0;
+ 
+-#if CONFIG_IDF_TARGET_ESP32C3
+-int esp_clk_cpu_freq(void);
+-#endif
++// Note: this is from a private IDF header
++extern int esp_clk_cpu_freq(void);
+ 
+ static mp_obj_t mp_machine_get_freq(void) {
+     return mp_obj_new_int(esp_rom_get_cpu_ticks_per_us() * 1000000);
+@@ -101,11 +100,11 @@ static mp_obj_t mp_machine_get_freq(void) {
+ static void mp_machine_set_freq(size_t n_args, const mp_obj_t *args) {
+     mp_int_t freq = mp_obj_get_int(args[0]) / 1000000;
+     if (freq != 20 && freq != 40 && freq != 80 && freq != 160
+-        #if !CONFIG_IDF_TARGET_ESP32C3
++        #if !(CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6)
+         && freq != 240
+         #endif
+         ) {
+-        #if CONFIG_IDF_TARGET_ESP32C3
++        #if CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6
+         mp_raise_ValueError(MP_ERROR_TEXT("frequency must be 20MHz, 40MHz, 80Mhz or 160MHz"));
+         #else
+         mp_raise_ValueError(MP_ERROR_TEXT("frequency must be 20MHz, 40MHz, 80Mhz, 160MHz or 240MHz"));
+@@ -118,6 +117,8 @@ static void mp_machine_set_freq(size_t n_args, const mp_obj_t *args) {
+     esp_pm_config_esp32_t pm;
+     #elif CONFIG_IDF_TARGET_ESP32C3
+     esp_pm_config_esp32c3_t pm;
++    #elif CONFIG_IDF_TARGET_ESP32C6
++    esp_pm_config_esp32c6_t pm;
+     #elif CONFIG_IDF_TARGET_ESP32S2
+     esp_pm_config_esp32s2_t pm;
+     #elif CONFIG_IDF_TARGET_ESP32S3
+@@ -146,7 +147,7 @@ static void machine_sleep_helper(wake_type_t wake_type, size_t n_args, const mp_
+         esp_sleep_enable_timer_wakeup(((uint64_t)expiry) * 1000);
+     }
+ 
+-    #if !CONFIG_IDF_TARGET_ESP32C3
++    #if !(CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6)
+ 
+     if (machine_rtc_config.ext0_pin != -1 && (machine_rtc_config.ext0_wake_types & wake_type)) {
+         esp_sleep_enable_ext0_wakeup(machine_rtc_config.ext0_pin, machine_rtc_config.ext0_level ? 1 : 0);
+diff --git a/ports/esp32/mpconfigport.h b/ports/esp32/mpconfigport.h
+index 747c55e92..6a8fd95fb 100644
+--- a/ports/esp32/mpconfigport.h
++++ b/ports/esp32/mpconfigport.h
+@@ -18,7 +18,7 @@
+ 
+ // object representation and NLR handling
+ #define MICROPY_OBJ_REPR                    (MICROPY_OBJ_REPR_A)
+-#if !CONFIG_IDF_TARGET_ESP32C3
++#if !CONFIG_IDF_TARGET_ARCH_RISCV
+ #define MICROPY_NLR_SETJMP                  (1)
+ #endif
+ 
+@@ -41,10 +41,10 @@
+ 
+ // emitters
+ #define MICROPY_PERSISTENT_CODE_LOAD        (1)
+-#if !CONFIG_IDF_TARGET_ESP32C3
+-#define MICROPY_EMIT_XTENSAWIN              (1)
+-#else
++#if CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6
+ #define MICROPY_EMIT_RV32                   (1)
++#else
++#define MICROPY_EMIT_XTENSAWIN              (1)
+ #endif
+ 
+ // workaround for xtensa-esp32-elf-gcc esp-2020r3, which can generate wrong code for loops
+@@ -168,6 +168,8 @@
+ #define MICROPY_PY_NETWORK_HOSTNAME_DEFAULT "mpy-esp32s3"
+ #elif CONFIG_IDF_TARGET_ESP32C3
+ #define MICROPY_PY_NETWORK_HOSTNAME_DEFAULT "mpy-esp32c3"
++#elif CONFIG_IDF_TARGET_ESP32C6
++#define MICROPY_PY_NETWORK_HOSTNAME_DEFAULT "mpy-esp32c6"
+ #endif
+ #endif
+ #define MICROPY_PY_NETWORK_INCLUDEFILE      "ports/esp32/modnetwork.h"
+@@ -321,11 +323,7 @@ void boardctrl_startup(void);
+ 
+ #if MICROPY_PY_NETWORK_LAN && CONFIG_ETH_USE_SPI_ETHERNET
+ #ifndef MICROPY_PY_NETWORK_LAN_SPI_CLOCK_SPEED_MZ
+-#if CONFIG_IDF_TARGET_ESP32 || CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C2
+-#define MICROPY_PY_NETWORK_LAN_SPI_CLOCK_SPEED_MZ       (12)
+-#else
+-#define MICROPY_PY_NETWORK_LAN_SPI_CLOCK_SPEED_MZ       (36)
+-#endif
++#define MICROPY_PY_NETWORK_LAN_SPI_CLOCK_SPEED_MZ       (20)
+ #endif
+ #endif
+ 
+diff --git a/ports/esp32/mphalport.h b/ports/esp32/mphalport.h
+index 9a7c39487..f95cf210d 100644
+--- a/ports/esp32/mphalport.h
++++ b/ports/esp32/mphalport.h
+@@ -73,7 +73,7 @@ void check_esp_err_(esp_err_t code, const char *func, const int line, const char
+ uint32_t mp_hal_ticks_us(void);
+ __attribute__((always_inline)) static inline uint32_t mp_hal_ticks_cpu(void) {
+     uint32_t ccount;
+-    #if CONFIG_IDF_TARGET_ESP32C3
++    #if CONFIG_IDF_TARGET_ARCH_RISCV
+     __asm__ __volatile__ ("csrr %0, 0x7E2" : "=r" (ccount)); // Machine Performance Counter Value
+     #else
+     __asm__ __volatile__ ("rsr %0,ccount" : "=a" (ccount));
